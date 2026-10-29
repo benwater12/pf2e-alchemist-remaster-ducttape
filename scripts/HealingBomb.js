@@ -1,103 +1,24 @@
 console.log("%cPF2e Alchemist Remaster Duct Tape | HealingBomb.js loaded","color: aqua; font-weight: bold;");
-import { debugLog, hasFeat, getSetting } from './settings.js';
-import { LT } from "./localization.js";
-
-// Creates a synthetic chat message for an errata-mode auto-hit Healing Bomb throw.
-// item is optional; if omitted the first Healing Bomb on the actor is used.
-export async function throwHealingBomb(actor, item = null) {
-	if (!item) item = actor.items.find(i => i.name.includes("Healing Bomb"));
-	if (!item) {
-		ui.notifications.warn("No Healing Bomb item found on this actor.");
-		return;
-	}
-
-	const targets = [...game.user.targets];
-	if (targets.length === 0) {
-		ui.notifications.warn(LT.healingBombNoTarget());
-		return;
-	}
-
-	const targetToken = targets[0];
-	const targetUuid = targetToken.document.uuid;
-
-	// Range check: errata rules limit the throw to 20 feet. Warn in chat but allow anyway.
-	let rangeWarning = "";
-	const sourceToken = actor.getActiveTokens(true)[0];
-	if (sourceToken) {
-		const distance = canvas.grid.measurePath([sourceToken.center, targetToken.center]).distance;
-		debugLog(1, `[Healing Bomb] Range check: ${Math.round(distance)} ft to ${targetToken.name}`);
-		if (distance > 20) {
-			rangeWarning = `<p class="ardt-range-warning">${LT.healingBombOutOfRange()}</p>`;
-		}
-	}
-
-	// Build minimal PF2e-style chat card HTML so the renderChatMessage hook
-	// can overwrite traits and inject healing buttons as normal.
-	const content = `
-		<header class="card-header flexrow">
-			<img src="${item.img}" style="flex:0 0 36px;border:none;margin-right:5px" />
-			<span class="flavor-text">
-				<h4 class="action"><strong>${item.name}</strong></h4>
-				<div class="traits"></div>
-			</span>
-		</header>
-		${rangeWarning}
-	`;
-
-	debugLog(1, `[Healing Bomb] Errata throw: ${actor.name} -> ${targetToken.name} (${targetUuid})`);
-
-	await ChatMessage.create({
-		content,
-		speaker: ChatMessage.getSpeaker({ actor }),
-		flags: {
-			pf2e: {
-				origin: { uuid: `Actor.${actor.id}.Item.${item.id}` },
-				context: {
-					domains: ["healing-bomb-ardt-attack"],
-					target: { token: targetUuid },
-					outcome: "success"
-				}
-			}
-		}
-	});
-}
+import { debugLog, getSetting, hasFeat, isAlchemist  } from './settings.js';
+import { LOCALIZED_TEXT } from "./localization.js";
 
 // Hook to modify actor sheet buttons
 Hooks.on("renderActorSheet", (app, html, data) => {
 	const actor = app.actor;
 	if (!actor) return;
 
-	const useErrata = getSetting("healingBombPC2Errata");
-
 	const $html = $(html);
 	$html.find("ol.actions-list.item-list.directory-list.strikes-list>li").each((index, element) => {
 		const name = $(element).find("section>h4.name>a").text();
 		if (name.includes("Healing Bomb")) {
-			if (useErrata) {
-				// PC2 Errata: Healing Bomb is an Interact action - auto-hit, no Strike roll or MAP.
-				// Remove damage/crit buttons and 2nd/3rd attack variants (MAP doesn't apply).
-				$(element).find("button[data-action=strike-damage]").remove();
-				$(element).find("button[data-action=strike-critical]").remove();
-				$(element).find("[data-action=strike-attack][data-variant-index='1']").remove();
-				$(element).find("[data-action=strike-attack][data-variant-index='2']").remove();
-				// Relabel the first attack button from "Strike" to "Throw"
-				$(element).find("button[data-action=strike-attack][data-variant-index='0'] span.name").text(LT.healingBombThrow());
-				// Intercept all remaining strike-attack clicks (image div + first variant button)
-				$(element).find("[data-action=strike-attack]").on("click", async (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					e.stopImmediatePropagation();
-					await throwHealingBomb(actor);
-				});
-			} else {
-				// Original rules: strike roll required - remove only damage/crit buttons,
-				// leave attack roll buttons untouched.
-				$(element).find("button[data-action=strike-damage]").remove();
-				$(element).find("button[data-action=strike-critical]").remove();
-			}
+			// Remove damage/crit buttons – healing is now handled in chat
+			$(element).find("button[data-action=strike-damage]").remove();
+			$(element).find("button[data-action=strike-critical]").remove();
+			// Leave strike/attack buttons untouched
 		}
 	});
 });
+
 
 // Hook to add healing buttons to chat message
 Hooks.on('renderChatMessage', async (message, html) => {
@@ -134,15 +55,15 @@ Hooks.on('renderChatMessage', async (message, html) => {
 	const $html = $(html);
 
 	// Setup localization for trait tags
-	const tagHealing = game.i18n.localize("ardt.healingBombTraitHealing");
-	const tagManipulate = game.i18n.localize("ardt.healingBombTraitManipulate");
-	const tagAlchemical = game.i18n.localize("ardt.healingBombTraitAlchemical");
-	const tagConsumable = game.i18n.localize("ardt.healingBombTraitConsumable");
-	const tagSplash = game.i18n.localize("ardt.healingBombTraitSplash");
-	const tagRangeInc30 = game.i18n.localize("ardt.healingBombTraitRange30");
+	const tagHealing = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_HEALING");
+	const tagManipulate = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_MANIPULATE");
+	const tagAlchemical = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_ALCHEMICAL");
+	const tagConsumable = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_CONSUMABLE");
+	const tagSplash = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_SPLASH");
+	const tagRangeInc30 = game.i18n.localize("PF2E_ALCHEMIST_REMASTER_DUCTTAPE.HEALING_BOMB_TRAIT_RANGE30");
 
 	// Overwrite traits
-	$html.find("header>span.flavor-text>h4.action>strong").text(LT.healingBombTitle());
+	$html.find("header>span.flavor-text>h4.action>strong").text(LOCALIZED_TEXT.HEALING_BOMB_TITLE);
 	$html.find("header>span.flavor-text>div.traits").html(`
 		<span class="tag" data-slug="healing">${tagHealing}</span>
 		<span class="tag" data-slug="manipulate">${tagManipulate}</span>
@@ -164,15 +85,15 @@ Hooks.on('renderChatMessage', async (message, html) => {
 		if (isChirurgeon) {
 			const dieSize = parseInt(item.system.damage.die.replace("d", ""));
 			const maxHeal = item.system.damage.dice * dieSize + item.system.damage.modifier;
-			healingButtons += `<button type="button" class="success" ${healDisabled} data-action="apply-healing-bomb" data-target="${targetUuid}" data-heal="${maxHeal}" data-splash="${splash}">${LT.healingBombButtonChirurgeon()}</button>`;
-			healingButtons += `<button type="button" class="splash" ${splashDisabled} data-action="apply-splash-only" data-target="${targetUuid}" data-splash="${splash}">${LT.healingBombButtonSplash()}</button>`;
+			healingButtons += `<button type="button" class="success" ${healDisabled} data-action="apply-healing-bomb" data-target="${targetUuid}" data-heal="${maxHeal}" data-splash="${splash}">${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_CHIRURGEON}</button>`;
+			healingButtons += `<button type="button" class="splash" ${splashDisabled} data-action="apply-splash-only" data-target="${targetUuid}" data-splash="${splash}">${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_SPLASH}</button>`;
 		} else {
-			healingButtons += `<button type="button" class="success" ${healDisabled} data-action="roll-healing-bomb" data-target="${targetUuid}" data-formula="${formula}" data-splash="${splash}">${LT.healingBombButtonHeal()}</button>`;
-			healingButtons += `<button type="button" class="splash" ${splashDisabled} data-action="apply-splash-only" data-target="${targetUuid}" data-splash="${splash}">${LT.healingBombButtonSplash()}</button>`;
+			healingButtons += `<button type="button" class="success" ${healDisabled} data-action="roll-healing-bomb" data-target="${targetUuid}" data-formula="${formula}" data-splash="${splash}">${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_HEAL}</button>`;
+			healingButtons += `<button type="button" class="splash" ${splashDisabled} data-action="apply-splash-only" data-target="${targetUuid}" data-splash="${splash}">${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_SPLASH}</button>`;
 		}
 	} else if (outcome === "failure") {
 		const splash = parseInt(item.system.splashDamage.value || 0);
-		healingButtons += `<button type="button" class="failure" ${failDisabled} data-action="apply-failure-healing" data-target="${targetUuid}" data-splash="${splash}">${LT.healingBombButtonFailure()}</button>`;
+		healingButtons += `<button type="button" class="failure" ${failDisabled} data-action="apply-failure-healing" data-target="${targetUuid}" data-splash="${splash}">${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_FAILURE}</button>`;
 
 	}
 
@@ -210,6 +131,9 @@ Hooks.on('renderChatMessage', async (message, html) => {
 		const token = actorDoc?.isToken ? actorDoc : actor?.getActiveTokens()[0];
 		if (!actor) return;
 		await actor.applyDamage({ damage: -parseInt(btn.dataset.heal), token, heal: true, skipIWR: true });
+		//	Below line should not be here, splash does not 
+		//  apply to target only adjacent - https://2e.aonprd.com/Feats.aspx?ID=5773
+		//	await actor.applyDamage({ damage: -parseInt(btn.dataset.splash), token, heal: true, skipIWR: true });
 	});
 
 	// Button: Roll healing
@@ -221,8 +145,11 @@ Hooks.on('renderChatMessage', async (message, html) => {
 		if (!actor) return;
 		const roll = new Roll(btn.dataset.formula);
 		await roll.evaluate({ async: true });
-		await roll.toMessage({ flavor: `${LT.healingBombButtonRolled()}: ${roll.total}` });
+		await roll.toMessage({ flavor: `${LOCALIZED_TEXT.HEALING_BOMB_BUTTON_ROLLED}: ${roll.total}` });
 		await actor.applyDamage({ damage: -roll.total, token, heal: true, skipIWR: true });
+		//	Below line should not be here, splash does not 
+		//  apply to target only adjacent - https://2e.aonprd.com/Feats.aspx?ID=5773
+		//	await actor.applyDamage({ damage: -parseInt(btn.dataset.splash), token, heal: true, skipIWR: true });
 	});
 
 	// Button: Apply splash healing
@@ -257,10 +184,17 @@ Hooks.on('renderChatMessage', async (message, html) => {
 
 			const dx = Math.abs(t.document.x - originX) / gridSize;
 			const dy = Math.abs(t.document.y - originY) / gridSize;
-			return Math.max(dx, dy) <= 1.5;
+			const isAdjacent = Math.max(dx, dy) <= 1.5;
+
+			if (!isAdjacent) {
+				debugLog(1, `[Healing Bomb] Skipping ${t.name}: not adjacent (dx=${dx}, dy=${dy})`);
+			}
+
+			return isAdjacent;
 		});
 
-		debugLog(1, `[Healing Bomb] splash heal ${splashHealing} to ${nearby.length} adjacent token(s)`, { targets: nearby.map(t => t.name) });
+		debugLog(1, `[Healing Bomb] Found ${nearby.length} adjacent token(s) for splash healing.`);
+		for (const t of nearby) debugLog(1, `[Healing Bomb] Healing ${t.name} for ${splashHealing}`);
 
 		for (const token of nearby) {
 			await token.actor.applyDamage({ damage: -splashHealing, token, heal: true, skipIWR: true });
@@ -270,7 +204,7 @@ Hooks.on('renderChatMessage', async (message, html) => {
 			const speaker = ChatMessage.getSpeaker({ token: originToken.document });
 			await ChatMessage.create({
 				speaker,
-				content: `💧 <strong>${LT.healingBomb()}</strong> ${LT.healingBombSplashApplied()} ${nearby.map(t => t.name).join(", ")} for ${splashHealing} HP.`
+				content: `💧 <strong>${LOCALIZED_TEXT.HEALING_BOMB}</strong> ${LOCALIZED_TEXT.HEALING_BOMB_SPLASH_APPLIED} ${nearby.map(t => t.name).join(", ")} for ${splashHealing} HP.`
 			});
 		}
 	});
@@ -304,3 +238,4 @@ Hooks.on('renderChatMessage', async (message, html) => {
 		await actor.applyDamage({ damage: -splashHealing, token, heal: true, skipIWR: true });
 	});
 });
+
